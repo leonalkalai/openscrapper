@@ -10,9 +10,11 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Download, Play, Square, AlertTriangle, CheckCircle, XCircle } from "lucide-react"
+import { Textarea } from "@/components/ui/textarea" // Import Textarea
 
 interface ApplicationData {
   success: boolean
+  licensePlate: string // Προσθήκη πινακίδας στα δεδομένα
   data?: Record<string, string>
   error?: string
   timestamp: string
@@ -20,7 +22,7 @@ interface ApplicationData {
 
 interface ScrapingStatus {
   isRunning: boolean
-  results: ApplicationData | null // Now holds a single result or null
+  results: ApplicationData[] // Τώρα είναι array από αποτελέσματα
   logs: string[]
 }
 
@@ -28,11 +30,11 @@ export default function OpenCarScraper() {
   // State declarations
   const [status, setStatus] = useState<ScrapingStatus>({
     isRunning: false,
-    results: null,
+    results: [], // Αρχικοποίηση ως κενό array
     logs: [],
   })
   const [settings, setSettings] = useState({
-    targetUrl: "https://dilosi.services.gov.gr/issue/487143024/application/", // Προσθήκη state για την URL
+    licensePlatesInput: "", // Προσθήκη state για το textarea των πινακίδων
     delayBetweenRequests: 60, // δευτερόλεπτα
     maxRetries: 3,
     respectTerms: false,
@@ -44,8 +46,13 @@ export default function OpenCarScraper() {
       alert("Πρέπει να συμφωνήσετε με τους όρους χρήσης")
       return
     }
-    if (!settings.targetUrl) {
-      alert("Παρακαλώ εισάγετε μια URL για scraping.")
+    const licensePlates = settings.licensePlatesInput
+      .split("\n")
+      .map((plate) => plate.trim())
+      .filter((plate) => plate.length > 0)
+
+    if (licensePlates.length === 0) {
+      alert("Παρακαλώ εισάγετε τουλάχιστον μία πινακίδα για scraping.")
       return
     }
 
@@ -53,7 +60,7 @@ export default function OpenCarScraper() {
     setStatus((prev) => ({
       ...prev,
       isRunning: true,
-      results: null,
+      results: [], // Clear previous results
       logs: [], // Clear previous logs
     }))
 
@@ -62,38 +69,33 @@ export default function OpenCarScraper() {
       ...prev,
       logs: [
         ...prev.logs,
-        `[${new Date().toLocaleTimeString("el-GR")}] INFO: Έναρξη scraping της σελίδας εφαρμογής...`,
+        `[${new Date().toLocaleTimeString("el-GR")}] INFO: Έναρξη scraping για ${licensePlates.length} πινακίδες...`,
       ],
     }))
 
     try {
-      // Call the Server Action, passing the targetUrl
+      // Call the Server Action, passing the licensePlates array
       const { applicationData, logs: serverLogs } = await scrapeApplicationAction(
-        settings.targetUrl, // Περάστε τη URL
+        licensePlates, // Περάστε το array πινακίδων
         settings.delayBetweenRequests,
         settings.maxRetries,
       )
 
       setStatus((prev) => ({
         ...prev,
-        results: applicationData,
+        results: applicationData, // Αποθηκεύστε όλα τα αποτελέσματα
         logs: [...prev.logs, ...serverLogs], // Append logs from the server action
       }))
 
-      if (applicationData?.success) {
-        setStatus((prev) => ({
-          ...prev,
-          logs: [...prev.logs, `[${new Date().toLocaleTimeString("el-GR")}] SUCCESS: Scraping ολοκληρώθηκε επιτυχώς!`],
-        }))
-      } else {
-        setStatus((prev) => ({
-          ...prev,
-          logs: [
-            ...prev.logs,
-            `[${new Date().toLocaleTimeString("el-GR")}] ERROR: Scraping απέτυχε: ${applicationData?.error || "Άγνωστο σφάλμα"} `,
-          ],
-        }))
-      }
+      const successCount = applicationData.filter((res) => res.success).length
+      const errorCount = applicationData.length - successCount
+      setStatus((prev) => ({
+        ...prev,
+        logs: [
+          ...prev.logs,
+          `[${new Date().toLocaleTimeString("el-GR")}] INFO: Scraping ολοκληρώθηκε. Επιτυχίες: ${successCount}, Αποτυχίες: ${errorCount}`,
+        ],
+      }))
     } catch (error: any) {
       setStatus((prev) => ({
         ...prev,
@@ -126,21 +128,21 @@ export default function OpenCarScraper() {
 
   // Export results
   const exportResults = () => {
-    if (!status.results) {
+    if (status.results.length === 0) {
       alert("Δεν υπάρχουν αποτελέσματα για εξαγωγή.")
       return
     }
 
     const dataToExport = {
       timestamp: new Date().toISOString(),
-      result: status.results,
+      results: status.results, // Εξαγωγή όλων των αποτελεσμάτων
     }
 
     const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: "application/json" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = `opencar_application_results_${new Date().toISOString().split("T")[0]}.json`
+    a.download = `opencar_vehicle_results_${new Date().toISOString().split("T")[0]}.json`
     document.body.appendChild(a)
     a.click()
     document.body.removeChild(a)
@@ -148,13 +150,13 @@ export default function OpenCarScraper() {
   }
 
   // Progress is now simpler, either 0, 50 (running), or 100 (completed)
-  const progress = status.isRunning ? 50 : status.results ? 100 : 0
+  const progress = status.isRunning ? 50 : status.results.length > 0 ? 100 : 0
 
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div className="text-center space-y-2">
-        <h1 className="text-3xl font-bold">OpenCar Application Scraper</h1>
-        <p className="text-muted-foreground">Ανάλυση δεδομένων από συγκεκριμένη σελίδα εφαρμογής gov.gr</p>
+        <h1 className="text-3xl font-bold">OpenCar Vehicle Scraper</h1>
+        <p className="text-muted-foreground">Ανάλυση δεδομένων οχημάτων από το gov.gr με βάση την πινακίδα</p>
       </div>
 
       <Alert>
@@ -169,14 +171,15 @@ export default function OpenCarScraper() {
           εμφανιστεί CAPTCHA, το scraping θα αποτύχει, καθώς η χειροκίνητη επίλυση δεν είναι δυνατή. Για
           αυτοματοποιημένη επίλυση CAPTCHA σε περιβάλλον serverless, απαιτείται ενσωμάτωση με εξειδικευμένη υπηρεσία.
           <br />
+          **Προσοχή:** Η βάση URL για την αναζήτηση πινακίδων στο `opencar-scraper.js` είναι υποθετική. **Πρέπει να την
+          προσαρμόσετε** στην πραγματική URL της ιστοσελίδας που θέλετε να κάνετε scrape.
+          <br />
           Σεβαστείτε τους όρους χρήσης του gov.gr και χρησιμοποιήστε το υπεύθυνα.
         </AlertDescription>
       </Alert>
 
       <Tabs defaultValue="setup" className="space-y-4">
         <TabsList className="grid w-full grid-cols-3">
-          {" "}
-          {/* Reduced to 3 tabs */}
           <TabsTrigger value="setup">Ρύθμιση</TabsTrigger>
           <TabsTrigger value="scraping">Scraping</TabsTrigger>
           <TabsTrigger value="results">Αποτελέσματα</TabsTrigger>
@@ -190,18 +193,18 @@ export default function OpenCarScraper() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="targetUrl">URL Εφαρμογής για Scraping</Label>
-                <Input
-                  id="targetUrl"
-                  type="url"
-                  placeholder="π.χ. https://dilosi.services.gov.gr/issue/..."
-                  value={settings.targetUrl}
+                <Label htmlFor="licensePlates">Πινακίδες Οχημάτων (μία ανά γραμμή)</Label>
+                <Textarea
+                  id="licensePlates"
+                  placeholder="π.χ. ΑΒΓ1234&#10;ΔΕΖ5678"
+                  value={settings.licensePlatesInput}
                   onChange={(e) =>
                     setSettings((prev) => ({
                       ...prev,
-                      targetUrl: e.target.value,
+                      licensePlatesInput: e.target.value,
                     }))
                   }
+                  rows={5}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
@@ -269,16 +272,18 @@ export default function OpenCarScraper() {
               <div className="flex items-center justify-between">
                 <div className="space-y-1">
                   <p className="text-sm font-medium">
-                    Κατάσταση: {status.isRunning ? "Σε εξέλιξη..." : status.results ? "Ολοκληρώθηκε" : "Αναμονή"}
+                    Κατάσταση:{" "}
+                    {status.isRunning ? "Σε εξέλιξη..." : status.results.length > 0 ? "Ολοκληρώθηκε" : "Αναμονή"}
                   </p>
-                  {status.isRunning && (
-                    <p className="text-sm text-muted-foreground">Scraping της σελίδας εφαρμογής...</p>
-                  )}
+                  {status.isRunning && <p className="text-sm text-muted-foreground">Scraping οχημάτων...</p>}
                 </div>
 
                 <div className="flex gap-2">
                   {!status.isRunning && (
-                    <Button onClick={startScraping} disabled={!settings.respectTerms || !settings.targetUrl}>
+                    <Button
+                      onClick={startScraping}
+                      disabled={!settings.respectTerms || settings.licensePlatesInput.trim().length === 0}
+                    >
                       <Play className="mr-2 h-4 w-4" />
                       Έναρξη Scraping
                     </Button>
@@ -308,7 +313,7 @@ export default function OpenCarScraper() {
             <CardHeader>
               <CardTitle className="flex items-center justify-between">
                 Αποτελέσματα Scraping
-                {status.results && (
+                {status.results.length > 0 && (
                   <Button onClick={exportResults} size="sm">
                     <Download className="mr-2 h-4 w-4" />
                     Εξαγωγή JSON
@@ -316,41 +321,42 @@ export default function OpenCarScraper() {
                 )}
               </CardTitle>
               <CardDescription>
-                {status.results
-                  ? status.results.success
-                    ? "Επιτυχία"
-                    : "Αποτυχία"
+                {status.results.length > 0
+                  ? `Βρέθηκαν ${status.results.length} αποτελέσματα.`
                   : "Δεν υπάρχουν αποτελέσματα ακόμα"}
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              {status.results ? (
-                <div
-                  className={`p-3 rounded-md border ${
-                    status.results.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="font-medium">Δεδομένα Εφαρμογής</span>
-                    {status.results.success ? (
-                      <CheckCircle className="h-4 w-4 text-green-600" />
-                    ) : (
-                      <XCircle className="h-4 w-4 text-red-600" />
-                    )}
-                  </div>
-
-                  {status.results.success && status.results.data && (
-                    <div className="mt-2 text-sm space-y-1">
-                      {Object.entries(status.results.data).map(([key, value]) => (
-                        <div key={key}>
-                          <span className="text-muted-foreground">{key}:</span> {value}
-                        </div>
-                      ))}
+            <CardContent className="space-y-4">
+              {status.results.length > 0 ? (
+                status.results.map((result, index) => (
+                  <div
+                    key={index}
+                    className={`p-3 rounded-md border ${
+                      result.success ? "bg-green-50 border-green-200" : "bg-red-50 border-red-200"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Πινακίδα: {result.licensePlate}</span>
+                      {result.success ? (
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                      ) : (
+                        <XCircle className="h-4 w-4 text-red-600" />
+                      )}
                     </div>
-                  )}
 
-                  {!status.results.success && <p className="mt-1 text-sm text-red-600">{status.results.error}</p>}
-                </div>
+                    {result.success && result.data && (
+                      <div className="mt-2 text-sm space-y-1">
+                        {Object.entries(result.data).map(([key, value]) => (
+                          <div key={key}>
+                            <span className="text-muted-foreground">{key}:</span> {value}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {!result.success && <p className="mt-1 text-sm text-red-600">{result.error}</p>}
+                  </div>
+                ))
               ) : (
                 <p className="text-muted-foreground">Δεν υπάρχουν αποτελέσματα ακόμα</p>
               )}

@@ -5,9 +5,11 @@ import fs from "fs/promises"
 import path from "path"
 
 class OpenCarScraper {
-  constructor(baseUrl) {
-    // Δέχεται τη baseUrl ως παράμετρο
-    this.baseUrl = baseUrl // Χρησιμοποιεί τη URL που παρέχεται
+  constructor(licensePlate) {
+    // Δέχεται την πινακίδα ως παράμετρο
+    // ΥΠΟΘΕΤΙΚΗ URL: ΠΡΕΠΕΙ ΝΑ ΤΗΝ ΠΡΟΣΑΡΜΟΣΕΤΕ ΣΤΗΝ ΠΡΑΓΜΑΤΙΚΗ URL ΑΝΑΖΗΤΗΣΗΣ ΠΙΝΑΚΙΔΑΣ
+    this.baseUrl = `https://dilosi.services.gov.gr/vehicle-lookup?plate=${licensePlate}`
+    this.licensePlate = licensePlate // Αποθηκεύουμε την πινακίδα
     this.requestDelay = 60000 // 1 αίτημα ανά λεπτό (used for retries)
     this.maxRetries = 3
     this.browser = null
@@ -229,7 +231,7 @@ class OpenCarScraper {
 
   async saveData(data) {
     try {
-      const filename = `opencar_application_data_${Date.now()}.json` // Generic filename
+      const filename = `opencar_application_data_${this.licensePlate}_${Date.now()}.json` // Filename includes license plate
       const filepath = path.join(process.cwd(), "data", filename)
 
       // Δημιουργούμε τον φάκελο data αν δεν υπάρχει
@@ -246,7 +248,7 @@ class OpenCarScraper {
   }
 
   async scrapeApplication() {
-    console.log(`\n🚗 Έναρξη scraping για την εφαρμογή: ${this.baseUrl}`)
+    console.log(`\n🚗 Έναρξη scraping για την πινακίδα: ${this.licensePlate} (${this.baseUrl})`)
 
     let retries = 0
     while (retries < this.maxRetries) {
@@ -266,11 +268,11 @@ class OpenCarScraper {
         // Αποθήκευση δεδομένων
         await this.saveData(data)
 
-        console.log(`✅ Επιτυχές scraping για την εφαρμογή`)
+        console.log(`✅ Επιτυχές scraping για την πινακίδα: ${this.licensePlate}`)
         return data
       } catch (error) {
         retries++
-        console.error(`❌ Προσπάγεια ${retries}/${this.maxRetries} απέτυχε:`, error.message)
+        console.error(`❌ Προσπάγεια ${retries}/${this.maxRetries} απέτυχε για ${this.licensePlate}:`, error.message)
 
         if (retries < this.maxRetries) {
           console.log(`⏳ Αναμονή ${this.requestDelay / 1000} δευτερολέπτων πριν την επόμενη προσπάθεια...`)
@@ -279,7 +281,7 @@ class OpenCarScraper {
       }
     }
 
-    console.error(`❌ Αποτυχία scraping για την εφαρμογή μετά από ${this.maxRetries} προσπάθειες`)
+    console.error(`❌ Αποτυχία scraping για την πινακίδα ${this.licensePlate} μετά από ${this.maxRetries} προσπάθειες`)
     return null
   }
 

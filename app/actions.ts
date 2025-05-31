@@ -4,65 +4,93 @@ import OpenCarScraper from "../opencar-scraper.js" // Εισαγωγή του sc
 
 interface ApplicationData {
   success: boolean
+  licensePlate: string // Προσθήκη πινακίδας στα δεδομένα
   data?: Record<string, string>
   error?: string
   timestamp: string
 }
 
 interface ScrapingResult {
-  applicationData: ApplicationData | null
+  applicationData: ApplicationData[] // Τώρα είναι array από αποτελέσματα
   logs: string[]
 }
 
 export async function scrapeApplicationAction(
-  targetUrl: string, // Νέα παράμετρος: η URL που θα γίνει scrape
+  licensePlates: string[], // Νέα παράμετρος: array από πινακίδες
   delayBetweenRequests: number,
   maxRetries: number,
 ): Promise<ScrapingResult> {
   const logs: string[] = []
+  const allApplicationData: ApplicationData[] = [] // Συγκέντρωση όλων των αποτελεσμάτων
+
   const addLog = (message: string, type: "info" | "success" | "error" | "warning" = "info") => {
     const timestamp = new Date().toLocaleTimeString("el-GR")
     logs.push(`[${timestamp}] ${type.toUpperCase()}: ${message}`)
   }
 
-  const scraper = new OpenCarScraper(targetUrl) // Περάστε τη URL στον constructor
-  scraper.requestDelay = delayBetweenRequests * 1000 // Μετατροπή δευτερολέπτων σε χιλιοστά του δευτερολέπτου
-  scraper.maxRetries = maxRetries
-
-  let applicationData: ApplicationData | null = null
+  let browserInstance = null // Θα χρησιμοποιήσουμε μία μόνο browser instance για όλες τις πινακίδες
 
   try {
-    addLog("Αρχικοποίηση scraper για την εφαρμογή...", "info")
-    await scraper.init()
+    addLog("Αρχικοποίηση scraper...", "info")
+    // Αρχικοποίηση του browser μία φορά
+    const tempScraper = new OpenCarScraper("temp") // Χρησιμοποιούμε μια προσωρινή πινακίδα για την αρχικοποίηση
+    await tempScraper.init()
+    browserInstance = tempScraper.browser // Κρατάμε την browser instance
 
-    addLog(`Έναρξη scraping της σελίδας εφαρμογής: ${targetUrl}`, "info")
-    const result = await scraper.scrapeApplication() // Κλήση της μεθόδου scraping
+    for (const licensePlate of licensePlates) {
+      addLog(`Έναρξη scraping για την πινακίδα: ${licensePlate}`, "info")
+      const scraper = new OpenCarScraper(licensePlate) // Δημιουργία νέου scraper για κάθε πινακίδα
+      scraper.requestDelay = delayBetweenRequests * 1000
+      scraper.maxRetries = maxRetries
+      scraper.browser = browserInstance // Χρησιμοποιούμε την υπάρχουσα browser instance
+      scraper.page = await browserInstance.newPage() // Δημιουργία νέας σελίδας για κάθε πινακίδα
 
-    if (result) {
-      addLog("Επιτυχής scraping της σελίδας εφαρμογής", "success")
-      applicationData = {
-        success: true,
-        data: result.extractedData,
-        timestamp: new Date().toISOString(),
+      let currentApplicationData: ApplicationData
+
+      try {
+        const result = await scraper.scrapeApplication()
+
+        if (result) {
+          addLog(`Επιτυχής scraping για την πινακίδα: ${licensePlate}`, "success")
+          currentApplicationData = {
+            success: true,
+            licensePlate: licensePlate,
+            data: result.extractedData,
+            timestamp: new Date().toISOString(),
+          }
+        } else {
+          addLog(`Αποτυχία scraping για την πινακίδα: ${licensePlate}`, "error")
+          currentApplicationData = {
+            success: false,
+            licensePlate: licensePlate,
+            error: "Δεν ήταν δυνατή η εξαγωγή δεδομένων από τη σελίδα",
+            timestamp: new Date().toISOString(),
+          }
+        }
+      } catch (error: any) {
+        addLog(`Σφάλμα κατά το scraping της πινακίδας ${licensePlate}: ${error.message}`, "error")
+        currentApplicationData = {
+          success: false,
+          licensePlate: licensePlate,
+          error: error.message,
+          timestamp: new Date().toISOString(),
+        }
+      } finally {
+        if (scraper.page) {
+          await scraper.page.close() // Κλείνουμε τη σελίδα μετά από κάθε scraping
+        }
       }
-    } else {
-      addLog("Αποτυχία scraping της σελίδας εφαρμογής", "error")
-      applicationData = {
-        success: false,
-        error: "Δεν ήταν δυνατή η εξαγωγή δεδομένων από τη σελίδα εφαρμογής",
-        timestamp: new Date().toISOString(),
-      }
+      allApplicationData.push(currentApplicationData)
+      await scraper.delay(delayBetweenRequests * 1000) // Καθυστέρηση μεταξύ αιτημάτων
     }
   } catch (error: any) {
-    addLog(`Σφάλμα κατά το scraping της εφαρμογής: ${error.message}`, "error")
-    applicationData = {
-      success: false,
-      error: error.message,
-      timestamp: new Date().toISOString(),
-    }
+    addLog(`Γενικό σφάλμα κατά την εκτέλεση του scraper: ${error.message}`, "error")
   } finally {
-    await scraper.close()
+    if (browserInstance) {
+      await browserInstance.close() // Κλείνουμε τον browser στο τέλος
+      addLog("Browser κλείσιμο", "info")
+    }
   }
 
-  return { applicationData, logs }
+  return { applicationData: allApplicationData, logs }
 }
