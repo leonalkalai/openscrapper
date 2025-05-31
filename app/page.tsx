@@ -32,6 +32,7 @@ export default function OpenCarScraper() {
     logs: [],
   })
   const [settings, setSettings] = useState({
+    targetUrl: "https://dilosi.services.gov.gr/issue/487143024/application/", // Προσθήκη state για την URL
     delayBetweenRequests: 60, // δευτερόλεπτα
     maxRetries: 3,
     respectTerms: false,
@@ -41,6 +42,10 @@ export default function OpenCarScraper() {
   const startScraping = async () => {
     if (!settings.respectTerms) {
       alert("Πρέπει να συμφωνήσετε με τους όρους χρήσης")
+      return
+    }
+    if (!settings.targetUrl) {
+      alert("Παρακαλώ εισάγετε μια URL για scraping.")
       return
     }
 
@@ -62,8 +67,9 @@ export default function OpenCarScraper() {
     }))
 
     try {
-      // Call the Server Action
+      // Call the Server Action, passing the targetUrl
       const { applicationData, logs: serverLogs } = await scrapeApplicationAction(
+        settings.targetUrl, // Περάστε τη URL
         settings.delayBetweenRequests,
         settings.maxRetries,
       )
@@ -183,6 +189,21 @@ export default function OpenCarScraper() {
               <CardDescription>Διαμορφώστε τις παραμέτρους για ασφαλές scraping</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="targetUrl">URL Εφαρμογής για Scraping</Label>
+                <Input
+                  id="targetUrl"
+                  type="url"
+                  placeholder="π.χ. https://dilosi.services.gov.gr/issue/..."
+                  value={settings.targetUrl}
+                  onChange={(e) =>
+                    setSettings((prev) => ({
+                      ...prev,
+                      targetUrl: e.target.value,
+                    }))
+                  }
+                />
+              </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <Label htmlFor="delay">Καθυστέρηση μεταξύ αιτημάτων (δευτερόλεπτα)</Label>
@@ -257,7 +278,7 @@ export default function OpenCarScraper() {
 
                 <div className="flex gap-2">
                   {!status.isRunning && (
-                    <Button onClick={startScraping} disabled={!settings.respectTerms}>
+                    <Button onClick={startScraping} disabled={!settings.respectTerms || !settings.targetUrl}>
                       <Play className="mr-2 h-4 w-4" />
                       Έναρξη Scraping
                     </Button>

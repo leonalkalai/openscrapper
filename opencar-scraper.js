@@ -5,8 +5,9 @@ import fs from "fs/promises"
 import path from "path"
 
 class OpenCarScraper {
-  constructor() {
-    this.baseUrl = "https://dilosi.services.gov.gr/issue/487143024/application/" // Updated URL
+  constructor(baseUrl) {
+    // Δέχεται τη baseUrl ως παράμετρο
+    this.baseUrl = baseUrl // Χρησιμοποιεί τη URL που παρέχεται
     this.requestDelay = 60000 // 1 αίτημα ανά λεπτό (used for retries)
     this.maxRetries = 3
     this.browser = null

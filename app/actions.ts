@@ -15,6 +15,7 @@ interface ScrapingResult {
 }
 
 export async function scrapeApplicationAction(
+  targetUrl: string, // Νέα παράμετρος: η URL που θα γίνει scrape
   delayBetweenRequests: number,
   maxRetries: number,
 ): Promise<ScrapingResult> {
@@ -24,7 +25,7 @@ export async function scrapeApplicationAction(
     logs.push(`[${timestamp}] ${type.toUpperCase()}: ${message}`)
   }
 
-  const scraper = new OpenCarScraper()
+  const scraper = new OpenCarScraper(targetUrl) // Περάστε τη URL στον constructor
   scraper.requestDelay = delayBetweenRequests * 1000 // Μετατροπή δευτερολέπτων σε χιλιοστά του δευτερολέπτου
   scraper.maxRetries = maxRetries
 
@@ -34,7 +35,7 @@ export async function scrapeApplicationAction(
     addLog("Αρχικοποίηση scraper για την εφαρμογή...", "info")
     await scraper.init()
 
-    addLog("Έναρξη scraping της σελίδας εφαρμογής...", "info")
+    addLog(`Έναρξη scraping της σελίδας εφαρμογής: ${targetUrl}`, "info")
     const result = await scraper.scrapeApplication() // Κλήση της μεθόδου scraping
 
     if (result) {
